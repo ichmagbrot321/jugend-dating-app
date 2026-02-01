@@ -1,7 +1,7 @@
 // ==================== SUPABASE KONFIGURATION ====================
 const SUPABASE_CONFIG = {
-  url: 'DEINE_SUPABASE_URL', // z.B. https://xyz.supabase.co
-  anonKey: 'DEIN_SUPABASE_ANON_KEY'
+  url: 'https://yavsgbhybwzjaptacbij.supabase.co', // z.B. https://xyz.supabase.co
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlhdnNnYmh5Ynd6amFwdGFjYmlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5ODEzNTIsImV4cCI6MjA4NTU1NzM1Mn0.MZ_sFW9RAzrZxrZ-hypzuXHZ6uq2907LspeoA43bIis'
 };
 
 // Initialisierung
