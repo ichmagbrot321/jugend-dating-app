@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TeenConnect - Admin Panel</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="admin-style.css">
+</head>
+<body class="admin-body">
+    <!-- Login Screen -->
+    <div id="admin-login-screen" class="screen active">
+        <div class="admin-login-container">
+            <img src="../images/logo.png" alt="Logo" class="logo">
+            <h1>Admin Panel</h1>
+            <p class="subtitle">Nur für Moderatoren und Admins</p>
+
+            <form id="admin-login-form">
+                <input type="email" id="admin-email" placeholder="E-Mail" required>
+                <input type="password" id="admin-password" placeholder="Passwort" required>
+                <button type="submit" class="btn-primary">Einloggen</button>
+            </form>
+
+            <div id="admin-error" class="error-message"></div>
+        </div>
+    </div>
+
+    <!-- Main Admin Panel -->
+    <div id="admin-panel" class="screen">
+        <!-- Sidebar -->
+        <aside class="admin-sidebar">
+            <div class="admin-header">
+                <img src="../images/logo.png" alt="Logo" style="width: 40px; height: 40px;">
+                <h2>Admin Panel</h2>
+            </div>
+
+            <div class="admin-user-info">
+                <img id="admin-avatar" src="" alt="Avatar" class="admin-avatar">
+                <div>
+                    <div id="admin-username" class="admin-username"></div>
+                    <div id="admin-role" class="admin-role"></div>
+                </div>
+            </div>
+
+            <nav class="admin-nav">
+                <button class="admin-nav-item active" data-section="dashboard">
+                    <span class="icon">📊</span>
+                    <span>Dashboard</span>
+                </button>
+                <button class="admin-nav-item" data-section="reports">
+                    <span class="icon">🚨</span>
+                    <span>Meldungen</span>
+                    <span class="badge" id="reports-badge" style="display:none;">0</span>
+                </button>
+                <button class="admin-nav-item" data-section="users">
+                    <span class="icon">👥</span>
+                    <span>Nutzer</span>
+                </button>
+                <button class="admin-nav-item" data-section="moderation-logs">
+                    <span class="icon">📋</span>
+                    <span>Moderations-Logs</span>
+                </button>
+                <button class="admin-nav-item" data-section="appeals">
+                    <span class="icon">⚖️</span>
+                    <span>Widersprüche</span>
+                    <span class="badge" id="appeals-badge" style="display:none;">0</span>
+                </button>
+                <button class="admin-nav-item" data-section="settings" id="settings-nav" style="display:none;">
+                    <span class="icon">⚙️</span>
+                    <span>Einstellungen</span>
+                </button>
+            </nav>
+
+            <button id="admin-logout" class="admin-logout">
+                <span class="icon">🚪</span>
+                Ausloggen
+            </button>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="admin-main">
+            <!-- Dashboard Section -->
+            <section id="section-dashboard" class="admin-section active">
+                <h1 class="admin-title">Dashboard</h1>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-total-users">0</div>
+                            <div class="stat-label">Gesamt Nutzer</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">🟢</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-online-users">0</div>
+                            <div class="stat-label">Online</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">🚨</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-pending-reports">0</div>
+                            <div class="stat-label">Offene Meldungen</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">⚠️</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-strikes-today">0</div>
+                            <div class="stat-label">Verwarnungen heute</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">🚫</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-banned-users">0</div>
+                            <div class="stat-label">Gesperrte Accounts</div>
+                        </div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-icon">💬</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-messages-today">0</div>
+                            <div class="stat-label">Nachrichten heute</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <h3>Aktivität (Letzte 7 Tage)</h3>
+                    <canvas id="activity-chart"></canvas>
+                </div>
+
+                <div class="recent-actions">
+                    <h3>Letzte Moderations-Aktionen</h3>
+                    <div id="recent-actions-list"></div>
+                </div>
+            </section>
+
+            <!-- Reports Section -->
+            <section id="section-reports" class="admin-section">
+                <div class="section-header">
+                    <h1 class="admin-title">Meldungen</h1>
+                    <div class="section-filters">
+                        <select id="report-filter-status" class="filter-select">
+                            <option value="all">Alle Status</option>
+                            <option value="pending" selected>Offen</option>
+                            <option value="reviewed">Geprüft</option>
+                            <option value="action_taken">Maßnahme ergriffen</option>
+                            <option value="rejected">Abgelehnt</option>
+                        </select>
+                        <select id="report-filter-reason" class="filter-select">
+                            <option value="all">Alle Gründe</option>
+                            <option value="grooming">Grooming</option>
+                            <option value="sexual">Sexuelle Inhalte</option>
+                            <option value="violence">Gewalt</option>
+                            <option value="harassment">Belästigung</option>
+                            <option value="spam">Spam</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="reports-list" class="reports-list"></div>
+            </section>
+
+            <!-- Users Section -->
+            <section id="section-users" class="admin-section">
+                <div class="section-header">
+                    <h1 class="admin-title">Nutzer-Verwaltung</h1>
+                    <div class="section-filters">
+                        <input type="text" id="user-search" placeholder="Suche nach Username..." class="search-input">
+                        <select id="user-filter-status" class="filter-select">
+                            <option value="all">Alle</option>
+                            <option value="active">Aktiv</option>
+                            <option value="restricted">Eingeschränkt</option>
+                            <option value="banned">Gesperrt</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="users-table" class="table-container"></div>
+            </section>
+
+            <!-- Moderation Logs Section -->
+            <section id="section-moderation-logs" class="admin-section">
+                <div class="section-header">
+                    <h1 class="admin-title">Moderations-Logs</h1>
+                    <div class="section-filters">
+                        <input type="date" id="log-date-from" class="filter-input">
+                        <input type="date" id="log-date-to" class="filter-input">
+                        <select id="log-filter-action" class="filter-select">
+                            <option value="all">Alle Aktionen</option>
+                            <option value="strike">Verwarnung</option>
+                            <option value="restrict">Einschränkung</option>
+                            <option value="ban">Sperrung</option>
+                            <option value="unban">Entsperrung</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="logs-table" class="table-container"></div>
+            </section>
+
+            <!-- Appeals Section -->
+            <section id="section-appeals" class="admin-section">
+                <h1 class="admin-title">Widersprüche</h1>
+                <div id="appeals-list" class="reports-list"></div>
+            </section>
+
+            <!-- Settings Section (Only for Admin/Owner) -->
+            <section id="section-settings" class="admin-section">
+                <h1 class="admin-title">Einstellungen</h1>
+
+                <div class="settings-section">
+                    <h3>Moderatoren verwalten</h3>
+                    <div class="moderator-controls">
+                        <input type="email" id="new-moderator-email" placeholder="E-Mail des neuen Moderators" class="input-field">
+                        <button id="add-moderator-btn" class="btn-primary">Moderator hinzufügen</button>
+                    </div>
+
+                    <div id="moderators-list" class="moderators-list"></div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>System-Einstellungen</h3>
+                    <label class="toggle-label">
+                        <span>Automatische Moderation</span>
+                        <input type="checkbox" id="setting-auto-moderation" checked>
+                    </label>
+                    <label class="toggle-label">
+                        <span>VPN-Erkennung</span>
+                        <input type="checkbox" id="setting-vpn-detection" checked>
+                    </label>
+                    <label class="toggle-label">
+                        <span>Neue Registrierungen erlauben</span>
+                        <input type="checkbox" id="setting-allow-registration" checked>
+                    </label>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Report Detail Modal -->
+    <div id="report-modal" class="modal-overlay">
+        <div class="modal large">
+            <button class="modal-close">✕</button>
+            <div id="report-modal-content"></div>
+        </div>
+    </div>
+
+    <!-- User Detail Modal -->
+    <div id="user-modal" class="modal-overlay">
+        <div class="modal large">
+            <button class="modal-close">✕</button>
+            <div id="user-modal-content"></div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="admin-toast" class="toast"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="../js/config.js"></script>
+    <script src="admin.js"></script>
+</body>
+</html>
