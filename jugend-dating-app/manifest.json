@@ -1,0 +1,33 @@
+{
+  "name": "TeenConnect - Sichere Dating-App",
+  "short_name": "TeenConnect",
+  "description": "DSGVO-konforme Dating- & Chat-App für Jugendliche ab 14",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/images/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/images/screenshot1.png",
+      "sizes": "540x720",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["social", "lifestyle"],
+  "lang": "de-DE"
+}
