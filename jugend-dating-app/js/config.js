@@ -1,14 +1,14 @@
 // ==================== SUPABASE KONFIGURATION ====================
-const SUPABASE_CONFIG = {
-  url: 'https://yavsgbhybwzjaptacbij.supabase.co', // z.B. https://xyz.supabase.co
-  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlhdnNnYmh5Ynd6amFwdGFjYmlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5ODEzNTIsImV4cCI6MjA4NTU1NzM1Mn0.MZ_sFW9RAzrZxrZ-hypzuXHZ6uq2907LspeoA43bIis'
-};
+const SUPABASE_URL = 'https://yavsgbhybwzjaptacbij.supabase.co'; // ← HIER EINTRAGEN
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlhdnNnYmh5Ynd6amFwdGFjYmlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5ODEzNTIsImV4cCI6MjA4NTU1NzM1Mn0.MZ_sFW9RAzrZxrZ-hypzuXHZ6uq2907LspeoA43bIis'; // ← HIER EINTRAGEN
 
-// Initialisierung
-const supabase = window.supabase.createClient(
-  SUPABASE_CONFIG.url,
-  SUPABASE_CONFIG.anonKey
-);
+// Initialisierung nur EINMAL
+let supabase;
+if (typeof window.supabase !== 'undefined') {
+  supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} else {
+  console.error('Supabase library nicht geladen!');
+}
 
 // ==================== OWNER KONFIGURATION ====================
 const OWNER_EMAIL = 'pajaziti.leon97080@gmail.com';
@@ -20,86 +20,126 @@ const APP_CONFIG = {
   maxMessageLength: 1000,
   profilePictureRequired: true,
   moderationEnabled: true,
-  vpnDetectionEnabled: true
+  vpnDetectionEnabled: true,
+  maxDistanceKm: 100, // Standard-Entfernung
+  allowCitySearch: true
 };
 
-// ==================== VPN DETECTION LISTEN ====================
+// ==================== VPN DETECTION API ====================
 const VPN_DETECTION = {
-  // Öffentliche VPN IP-Ranges (Beispiel - erweitere diese Liste)
+  // API Keys (optional für bessere Detection)
+  ipQualityScore: null, // Optional: https://www.ipqualityscore.com
+  
+  // Bekannte VPN/Proxy Ranges
   knownVPNRanges: [
     '185.159.158.0/24', // NordVPN
     '37.120.128.0/17',  // ExpressVPN
-    // Weitere hinzufügen
+    '193.29.104.0/21',  // ProtonVPN
+    '91.219.237.0/24',  // CyberGhost
   ],
   
-  // ASN von bekannten VPN-Providern
+  // ASN von VPN-Providern
   knownVPNASNs: [
-    'AS396982', // Google Cloud
-    'AS16509', // Amazon AWS
-    'AS14061', // DigitalOcean
-    // Weitere hinzufügen
+    'AS396982', 'AS16509', 'AS14061', 'AS13335'
+  ],
+  
+  // VPN-Keywords in Hostnames
+  vpnKeywords: [
+    'vpn', 'proxy', 'tor', 'relay', 'tunnel', 'hide', 
+    'anonymous', 'private', 'secure', 'express'
   ]
 };
 
 // ==================== MODERATION WORTLISTEN ====================
 const MODERATION_LISTS = {
-  // Kritische Wörter (sofortiger Block)
   critical: [
     'nudes', 'nacktbilder', 'sexting', 'treffen', 'adresse',
-    'telefonnummer', 'whatsapp', 'snap', 'instagram private'
+    'telefonnummer', 'whatsapp', 'snap', 'instagram', 'telegram',
+    'komm vorbei', 'zu mir', 'alleine treffen'
   ],
   
-  // Grooming-Patterns
   grooming: [
     'geheim', 'nicht sagen', 'alleine treffen', 'niemand erzählen',
-    'besonders', 'erwachsen', 'reif für dein alter'
+    'besonders', 'erwachsen', 'reif für dein alter', 'nur uns zwei',
+    'vertrauen', 'geschenk', 'belohnung'
   ],
   
-  // Sexuelle Inhalte
   sexual: [
-    'sex', 'porno', 'geil', 'nackt', 'brüste', 'penis',
-    'vagina', 'anal', 'oral', 'masturbation'
+    'sex', 'porno', 'xxx', 'geil', 'nackt', 'brüste', 'penis',
+    'vagina', 'anal', 'oral', 'masturbation', 'wichsen', 'fingern',
+    'blasen', 'lecken', 'fick', 'bumsen'
   ],
   
-  // Gewalt
   violence: [
-    'töten', 'umbringen', 'selbstmord', 'ritzen', 'blut',
-    'messer', 'waffe', 'schießen'
+    'töten', 'umbringen', 'selbstmord', 'suizid', 'ritzen', 'blut',
+    'messer', 'waffe', 'schießen', 'erschiessen', 'erstechen',
+    'vergewaltigung', 'missbrauch'
   ],
   
-  // Drogen
   drugs: [
-    'kokain', 'heroin', 'crystal', 'mdma', 'ecstasy',
-    'gras', 'weed', 'kiffen', 'dealer'
+    'kokain', 'koks', 'heroin', 'crystal', 'meth', 'mdma', 'ecstasy',
+    'lsd', 'pilze', 'gras', 'weed', 'kiffen', 'dealer', 'drogen kaufen',
+    'high werden', 'speed', 'amphetamin'
   ],
   
-  // Belästigung
   harassment: [
-    'hure', 'schlampe', 'schwuchtel', 'missgeburt',
-    'hässlich', 'fett', 'dumm', 'behindert'
+    'hure', 'schlampe', 'nutte', 'fotze', 'schwuchtel', 'spast',
+    'missgeburt', 'hässlich', 'fett', 'dumm', 'behindert', 'mongo',
+    'opfer', 'hurensohn', 'wichser'
   ]
 };
 
 // ==================== REGEX PATTERNS ====================
 const MODERATION_PATTERNS = {
-  // Telefonnummern
   phone: /(\+?\d{1,4}[\s-]?)?\(?\d{3,4}\)?[\s-]?\d{3,4}[\s-]?\d{3,4}/g,
-  
-  // E-Mail Adressen
   email: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
-  
-  // URLs
-  url: /(https?:\/\/|www\.)[^\s]+/g,
-  
-  // Adressen (grob)
+  url: /(https?:\/\/|www\.)[^\s]+/gi,
   address: /\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]+(\s+[A-ZÄÖÜ][a-zäöüß]+)*\b/g,
-  
-  // Social Media Handles
   social: /@[a-zA-Z0-9._]{3,}/g,
-  
-  // Wiederholte Zeichen (Spam)
   spam: /(.)\1{4,}/g
 };
+
+// ==================== DISTANZ-BERECHNUNG ====================
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Erdradius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// ==================== GEO-CODING (Stadt zu Koordinaten) ====================
+async function getCityCoordinates(city, region) {
+  try {
+    // Nominatim (OpenStreetMap) - kostenlos, keine API-Key nötig
+    const query = `${city}, ${region}, Germany`;
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'TeenConnect-Dating-App'
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (data && data.length > 0) {
+      return {
+        lat: parseFloat(data[0].lat),
+        lon: parseFloat(data[0].lon)
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Geocoding-Fehler:', error);
+    return null;
+  }
+}
 
 // ==================== EXPORT ====================
 if (typeof module !== 'undefined' && module.exports) {
@@ -109,6 +149,8 @@ if (typeof module !== 'undefined' && module.exports) {
     APP_CONFIG,
     VPN_DETECTION,
     MODERATION_LISTS,
-    MODERATION_PATTERNS
+    MODERATION_PATTERNS,
+    calculateDistance,
+    getCityCoordinates
   };
 }
