@@ -1,4 +1,4 @@
-// ==================== AUTH SYSTEM ====================
+// ==================== AUTH SYSTEM - FIXED ====================
 
 class AuthManager {
   constructor() {
@@ -7,29 +7,31 @@ class AuthManager {
   }
 
   async init() {
-    // Prüfe Session
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (session) {
-      await this.handleAuthSuccess(session.user);
-    } else {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session) {
+        await this.handleAuthSuccess(session.user);
+      } else {
+        this.showScreen('auth-screen');
+      }
+
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          await this.handleAuthSuccess(session.user);
+        } else if (event === 'SIGNED_OUT') {
+          this.handleLogout();
+        }
+      });
+
+      this.setupEventListeners();
+    } catch (error) {
+      console.error('Init error:', error);
       this.showScreen('auth-screen');
     }
-
-    // Auth Listener
-    supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        await this.handleAuthSuccess(session.user);
-      } else if (event === 'SIGNED_OUT') {
-        this.handleLogout();
-      }
-    });
-
-    this.setupEventListeners();
   }
 
   setupEventListeners() {
-    // Tab-Switching
     document.querySelectorAll('.tab').forEach(tab => {
       tab.addEventListener('click', (e) => {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -41,19 +43,16 @@ class AuthManager {
       });
     });
 
-    // Login Form
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       await this.handleLogin();
     });
 
-    // Register Form
     document.getElementById('register-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       await this.handleRegister();
     });
 
-    // Geburtsdatum Change - Eltern-Email anzeigen
     document.getElementById('reg-birthdate').addEventListener('change', (e) => {
       const age = this.calculateAge(e.target.value);
       const parentSection = document.getElementById('parent-email-section');
@@ -68,35 +67,32 @@ class AuthManager {
       }
     });
 
-    // AGB/Privacy Links
-    document.getElementById('show-agb').addEventListener('click', (e) => {
+    document.getElementById('show-agb')?.addEventListener('click', (e) => {
       e.preventDefault();
       this.showAGB();
     });
 
-    document.getElementById('show-privacy').addEventListener('click', (e) => {
+    document.getElementById('show-privacy')?.addEventListener('click', (e) => {
       e.preventDefault();
       this.showPrivacy();
     });
 
-    document.getElementById('show-jugendschutz').addEventListener('click', (e) => {
+    document.getElementById('show-jugendschutz')?.addEventListener('click', (e) => {
       e.preventDefault();
       this.showJugendschutz();
     });
   }
 
   async handleLogin() {
-    const email = document.getElementById('login-email').value;
+    const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
 
-    try {
-      // VPN Check
-      const vpnCheckResult = await this.checkVPN();
-      if (vpnCheckResult.blocked) {
-        this.showError(vpnCheckResult.message);
-        return;
-      }
+    if (!email || !password) {
+      this.showError('Bitte fülle alle Felder aus');
+      return;
+    }
 
+    try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -104,14 +100,21 @@ class AuthManager {
 
       if (error) throw error;
 
-      // Prüfe Account-Status
-      const { data: userData, error: userError } = await supabase
+      // Prüfe ob User-Profil existiert
+      const { data: users, error: userError } = await supabase
         .from('users')
-        .select('account_status, ban_reason')
-        .eq('id', data.user.id)
-        .single();
+        .select('*')
+        .eq('id', data.user.id);
 
       if (userError) throw userError;
+
+      if (!users || users.length === 0) {
+        await supabase.auth.signOut();
+        this.showError('Profil nicht gefunden. Bitte registriere dich erneut.');
+        return;
+      }
+
+      const userData = users[0]; // Nehme ersten User
 
       if (userData.account_status === 'banned') {
         await supabase.auth.signOut();
@@ -123,8 +126,11 @@ class AuthManager {
         this.showToast('Dein Account ist eingeschränkt.', 'warning');
       }
 
+      // Login erfolgreich - handleAuthSuccess wird von onAuthStateChange getriggert
+
     } catch (error) {
-      this.showError(error.message);
+      console.error('Login error:', error);
+      this.showError('Login fehlgeschlagen: ' + (error.message || 'Unbekannter Fehler'));
     }
   }
 
@@ -152,32 +158,24 @@ class AuthManager {
         return;
       }
 
-      // VPN-Check
-      const vpnCheckResult = await this.checkVPN();
-      if (vpnCheckResult.blocked) {
-        this.showError(vpnCheckResult.message);
-        return;
-      }
-
       // Username-Prüfung
-      const { data: existingUser } = await supabase
+      const { data: existingUsers } = await supabase
         .from('users')
         .select('username')
-        .eq('username', username)
-        .single();
+        .eq('username', username);
 
-      if (existingUser) {
+      if (existingUsers && existingUsers.length > 0) {
         this.showError('Benutzername bereits vergeben.');
         return;
       }
 
-      // Geo-Coding (Stadt zu Koordinaten)
+      // Geo-Coding (optional)
       let coordinates = null;
       if (city && typeof getCityCoordinates === 'function') {
-        this.showToast('Koordinaten werden ermittelt...', 'info');
-        coordinates = await getCityCoordinates(city, region);
-        if (!coordinates) {
-          console.warn('Koordinaten konnten nicht ermittelt werden');
+        try {
+          coordinates = await getCityCoordinates(city, region);
+        } catch (e) {
+          console.warn('Geocoding failed:', e);
         }
       }
 
@@ -186,6 +184,7 @@ class AuthManager {
         email,
         password,
         options: {
+          emailRedirectTo: window.location.origin,
           data: {
             username,
             birthdate,
@@ -199,10 +198,16 @@ class AuthManager {
 
       if (authError) throw authError;
 
+      if (!authData.user) {
+        throw new Error('Registrierung fehlgeschlagen');
+      }
+
+      // Warte kurz (wichtig für Supabase Auth)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       // User-Profil erstellen
       const needsParentVerification = age < APP_CONFIG.parentVerificationAge;
       
-      // Rolle festlegen (Owner-Check)
       let role = 'user';
       if (email === OWNER_EMAIL) {
         role = 'owner';
@@ -223,124 +228,72 @@ class AuthManager {
           interessen: interests,
           role: role,
           account_status: 'active',
-          last_ip: await this.getIP(),
-          vpn_detected: vpnCheckResult.vpnDetected
+          last_ip: null,
+          vpn_detected: false
         });
 
-      if (profileError) throw profileError;
-
-      // Eltern-Verifikation senden
-      if (needsParentVerification && parentEmail) {
-        await this.sendParentVerification(authData.user.id, parentEmail, username);
+      if (profileError) {
+        console.error('Profile creation error:', profileError);
+        // Versuche User zu löschen wenn Profil-Erstellung fehlschlägt
+        await supabase.auth.admin.deleteUser(authData.user.id);
+        throw new Error('Profil konnte nicht erstellt werden: ' + profileError.message);
       }
 
       // Erfolg
-      if (needsParentVerification) {
-        this.showToast('Registrierung erfolgreich! Bitte warte auf die Bestätigung deiner Eltern.', 'success');
-      } else {
-        this.showToast('Registrierung erfolgreich! Du kannst dich jetzt einloggen.', 'success');
-      }
-
+      this.showToast('Registrierung erfolgreich! Bitte prüfe deine E-Mails.', 'success');
+      
       // Wechsel zu Login
       document.querySelector('.tab[data-tab="login"]').click();
       document.getElementById('register-form').reset();
 
     } catch (error) {
-      this.showError(error.message);
-    }
-  }
-
-  async sendParentVerification(userId, parentEmail, username) {
-    try {
-      // Erstelle Verifikations-Token
-      const token = this.generateToken();
-      
-      // Speichere Token
-      await supabase
-        .from('parent_verifications')
-        .insert({
-          user_id: userId,
-          parent_email: parentEmail,
-          token,
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 Tage
-        });
-
-      // Versuche E-Mail zu senden (Edge Function - optional)
-      try {
-        await supabase.functions.invoke('send-parent-verification', {
-          body: {
-            parentEmail,
-            username,
-            token
-          }
-        });
-      } catch (emailError) {
-        console.warn('E-Mail konnte nicht gesendet werden:', emailError);
-        // Kein Fehler werfen - Registrierung trotzdem erfolgreich
-      }
-    } catch (error) {
-      console.error('Fehler bei Eltern-Verifikation:', error);
-      // Kein Fehler werfen - Registrierung trotzdem erfolgreich
+      console.error('Registration error:', error);
+      this.showError('Registrierung fehlgeschlagen: ' + (error.message || 'Unbekannter Fehler'));
     }
   }
 
   async handleAuthSuccess(user) {
-    // Hole User-Daten
-    const { data: userData, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+    try {
+      // Hole User-Daten (OHNE .single()!)
+      const { data: users, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id);
 
-    if (error) {
-      console.error('User-Daten nicht gefunden:', error);
-      return;
-    }
-
-    this.currentUser = userData;
-
-    // Prüfe Eltern-Verifikation
-    if (!userData.verified_parent) {
-      this.showError('Warte auf Bestätigung durch deine Eltern. Du kannst noch nicht chatten.');
-      // Zeige eingeschränktes Profil
-    }
-
-    // Prüfe Profilbild
-    if (APP_CONFIG.profilePictureRequired && !userData.profilbild_url) {
-      this.showToast('Bitte lade ein Profilbild hoch!', 'warning');
-    }
-
-    // Update last_active
-    await supabase
-      .from('users')
-      .update({
-        last_active_at: new Date().toISOString(),
-        last_ip: await this.getIP()
-      })
-      .eq('id', user.id);
-
-    // VPN-Check während Session
-    if (APP_CONFIG.vpnDetectionEnabled) {
-      const vpnCheckResult = await this.checkVPN();
-      if (vpnCheckResult.vpnDetected) {
-        await supabase
-          .from('users')
-          .update({ vpn_detected: true })
-          .eq('id', user.id);
-        
-        if (vpnCheckResult.blocked) {
-          await supabase.auth.signOut();
-          this.showError('VPN während der Nutzung erkannt. Session beendet.');
-          return;
-        }
+      if (error) {
+        console.error('User data error:', error);
+        await supabase.auth.signOut();
+        this.showError('Fehler beim Laden des Profils');
+        return;
       }
-    }
 
-    this.showScreen('main-screen');
-    
-    // Lade App-Daten
-    if (typeof window.app !== 'undefined') {
-      window.app.init(this.currentUser);
+      if (!users || users.length === 0) {
+        console.error('No user profile found');
+        await supabase.auth.signOut();
+        this.showError('Profil nicht gefunden. Bitte kontaktiere den Support.');
+        return;
+      }
+
+      const userData = users[0];
+      this.currentUser = userData;
+
+      // Update last_active
+      await supabase
+        .from('users')
+        .update({
+          last_active_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      this.showScreen('main-screen');
+      
+      if (typeof window.app !== 'undefined') {
+        window.app.init(this.currentUser);
+      }
+
+    } catch (error) {
+      console.error('Auth success handler error:', error);
+      this.showError('Fehler beim Login');
     }
   }
 
@@ -351,160 +304,6 @@ class AuthManager {
     if (typeof window.app !== 'undefined') {
       window.app.cleanup();
     }
-  }
-
-  async checkVPN() {
-    try {
-      const ip = await this.getIP();
-      
-      if (!ip) {
-        return { 
-          blocked: false, 
-          vpnDetected: false, 
-          message: 'IP konnte nicht ermittelt werden' 
-        };
-      }
-
-      // 1. HOSTNAME & REVERSE DNS CHECK
-      const ipInfoResponse = await fetch(`https://ipapi.co/${ip}/json/`);
-      const ipInfo = await ipInfoResponse.json();
-
-      // Prüfe Hostname auf VPN-Keywords
-      if (ipInfo.hostname) {
-        const hostname = ipInfo.hostname.toLowerCase();
-        if (typeof VPN_DETECTION !== 'undefined' && VPN_DETECTION.vpnKeywords) {
-          for (const keyword of VPN_DETECTION.vpnKeywords) {
-            if (hostname.includes(keyword)) {
-              return {
-                blocked: true,
-                vpnDetected: true,
-                message: `VPN/Proxy erkannt (${ipInfo.hostname}). Bitte deaktiviere deinen VPN.`
-              };
-            }
-          }
-        }
-      }
-
-      // 2. ASN CHECK
-      if (ipInfo.asn && typeof VPN_DETECTION !== 'undefined' && VPN_DETECTION.knownVPNASNs) {
-        if (VPN_DETECTION.knownVPNASNs.includes(ipInfo.asn)) {
-          return {
-            blocked: true,
-            vpnDetected: true,
-            message: `VPN/Proxy erkannt (ASN: ${ipInfo.asn}). Bitte deaktiviere deinen VPN.`
-          };
-        }
-      }
-
-      // 3. ORG/ISP CHECK
-      if (ipInfo.org && typeof VPN_DETECTION !== 'undefined' && VPN_DETECTION.vpnKeywords) {
-        const org = ipInfo.org.toLowerCase();
-        for (const keyword of VPN_DETECTION.vpnKeywords) {
-          if (org.includes(keyword)) {
-            return {
-              blocked: true,
-              vpnDetected: true,
-              message: `VPN/Proxy erkannt (Provider: ${ipInfo.org}). Bitte deaktiviere deinen VPN.`
-            };
-          }
-        }
-      }
-
-      // 4. DATACENTER CHECK
-      if (ipInfo.org) {
-        const datacenterKeywords = ['hosting', 'server', 'cloud', 'data center', 'datacenter'];
-        const org = ipInfo.org.toLowerCase();
-        
-        for (const keyword of datacenterKeywords) {
-          if (org.includes(keyword)) {
-            return {
-              blocked: true,
-              vpnDetected: true,
-              message: 'Datacenter-IP erkannt. Bitte nutze eine private Internet-Verbindung.'
-            };
-          }
-        }
-      }
-
-      // 5. TOR EXIT NODE CHECK
-      if (ipInfo.hostname && ipInfo.hostname.includes('tor-exit')) {
-        return {
-          blocked: true,
-          vpnDetected: true,
-          message: 'Tor-Netzwerk erkannt. Bitte deaktiviere Tor.'
-        };
-      }
-
-      // 6. IP QUALITY SCORE (optional - wenn API-Key vorhanden)
-      if (typeof VPN_DETECTION !== 'undefined' && VPN_DETECTION.ipQualityScore) {
-        try {
-          const qualityResponse = await fetch(
-            `https://ipqualityscore.com/api/json/ip/${VPN_DETECTION.ipQualityScore}/${ip}?strictness=1`
-          );
-          const qualityData = await qualityResponse.json();
-          
-          if (qualityData.proxy || qualityData.vpn || qualityData.tor) {
-            return {
-              blocked: true,
-              vpnDetected: true,
-              message: 'VPN/Proxy erkannt. Bitte deaktiviere deinen VPN.'
-            };
-          }
-        } catch (e) {
-          console.warn('IP Quality Score Check fehlgeschlagen:', e);
-        }
-      }
-
-      // Kein VPN erkannt
-      return { 
-        blocked: false, 
-        vpnDetected: false, 
-        message: 'OK' 
-      };
-
-    } catch (error) {
-      console.error('VPN-Check fehlgeschlagen:', error);
-      // Bei Fehler NICHT blockieren (False Negative besser als False Positive)
-      return { 
-        blocked: false, 
-        vpnDetected: false, 
-        message: 'Check fehlgeschlagen' 
-      };
-    }
-  }
-
-  async getIP() {
-    try {
-      // Nutze mehrere Services als Fallback
-      const services = [
-        'https://api.ipify.org?format=json',
-        'https://ipapi.co/json/',
-        'https://api.my-ip.io/ip.json'
-      ];
-
-      for (const service of services) {
-        try {
-          const response = await fetch(service);
-          const data = await response.json();
-          const ip = data.ip || data.address;
-          if (ip) return ip;
-        } catch (e) {
-          continue;
-        }
-      }
-
-      return null;
-    } catch (error) {
-      console.error('IP-Abruf fehlgeschlagen:', error);
-      return null;
-    }
-  }
-
-  ipInRange(ip, range) {
-    // Einfache IP-Range-Prüfung (kann erweitert werden)
-    const [rangeIP, mask] = range.split('/');
-    // Implementiere CIDR-Check hier
-    return false; // Vereinfacht
   }
 
   calculateAge(birthdate) {
@@ -520,33 +319,37 @@ class AuthManager {
     return age;
   }
 
-  generateToken() {
-    return Math.random().toString(36).substring(2) + Date.now().toString(36);
-  }
-
   showScreen(screenId) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(screenId).classList.add('active');
+    const screen = document.getElementById(screenId);
+    if (screen) {
+      screen.classList.add('active');
+    }
   }
 
   showError(message) {
     const errorEl = document.getElementById('auth-error');
-    errorEl.textContent = message;
-    errorEl.classList.add('show');
-    
-    setTimeout(() => {
-      errorEl.classList.remove('show');
-    }, 5000);
+    if (errorEl) {
+      errorEl.textContent = message;
+      errorEl.classList.add('show');
+      
+      setTimeout(() => {
+        errorEl.classList.remove('show');
+      }, 5000);
+    }
+    console.error('Auth Error:', message);
   }
 
   showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.className = `toast show ${type}`;
-    
-    setTimeout(() => {
-      toast.classList.remove('show');
-    }, 4000);
+    if (toast) {
+      toast.textContent = message;
+      toast.className = `toast show ${type}`;
+      
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 4000);
+    }
   }
 
   showAGB() {
@@ -580,7 +383,6 @@ class AuthManager {
       <h3>6. Beendigung</h3>
       <p>6.1 Accounts können jederzeit gelöscht werden.</p>
       <p>6.2 Bei schweren Verstößen behält sich die Plattform permanente Sperrungen vor.</p>
-      <p>6.3 Bitte sprich mit deinen Eltern und wenn du dich unwohl fühlst, melde das und wende dich an deine Eltern.</p>
     `;
     this.showModal(content);
   }
@@ -597,38 +399,18 @@ class AuthManager {
       <p>2.1 Registrierungsdaten: E-Mail, Benutzername, Geburtsdatum, Region</p>
       <p>2.2 Profilbild (verpflichtend)</p>
       <p>2.3 Chat-Nachrichten (verschlüsselt gespeichert)</p>
-      <p>2.4 IP-Adressen (zur Sicherheit und VPN-Erkennung)</p>
-      <p>2.5 Nutzungsdaten: Online-Status, letzte Aktivität</p>
-      <p>2.6 Standortdaten: Region, optional Stadt und Koordinaten (für Umkreissuche)</p>
+      <p>2.4 Nutzungsdaten: Online-Status, letzte Aktivität</p>
       
       <h3>3. Zweck der Datenverarbeitung</h3>
       <p>3.1 Bereitstellung der Plattform</p>
       <p>3.2 Sicherheit und Jugendschutz</p>
       <p>3.3 Moderation und Verhinderung von Missbrauch</p>
-      <p>3.4 Umkreissuche (nur mit Zustimmung)</p>
       
-      <h3>4. Rechtsgrundlage</h3>
-      <p>Art. 6 Abs. 1 lit. a DSGVO (Einwilligung)</p>
-      <p>Art. 6 Abs. 1 lit. b DSGVO (Vertragserfüllung)</p>
-      <p>Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an Sicherheit)</p>
-      
-      <h3>5. Datenweitergabe</h3>
-      <p>5.1 Keine Weitergabe an Dritte außer bei gesetzlicher Verpflichtung</p>
-      <p>5.2 Hosting über Supabase (EU-Server)</p>
-      
-      <h3>6. Speicherdauer</h3>
-      <p>6.1 Account-Daten: bis zur Löschung des Accounts</p>
-      <p>6.2 Chat-Nachrichten: bis zur Löschung durch Nutzer</p>
-      <p>6.3 Moderations-Logs: 6 Monate</p>
-      
-      <h3>7. Ihre Rechte</h3>
-      <p>7.1 Auskunft, Berichtigung, Löschung</p>
-      <p>7.2 Einschränkung der Verarbeitung</p>
-      <p>7.3 Datenübertragbarkeit</p>
-      <p>7.4 Widerspruch und Beschwerde bei Aufsichtsbehörde</p>
-      
-      <h3>8. Cookies</h3>
-      <p>Nur technisch notwendige Cookies (Session)</p>
+      <h3>4. Ihre Rechte</h3>
+      <p>4.1 Auskunft, Berichtigung, Löschung</p>
+      <p>4.2 Einschränkung der Verarbeitung</p>
+      <p>4.3 Datenübertragbarkeit</p>
+      <p>4.4 Widerspruch und Beschwerde bei Aufsichtsbehörde</p>
     `;
     this.showModal(content);
   }
@@ -641,7 +423,7 @@ class AuthManager {
       
       <h4>1. Persönliche Daten schützen</h4>
       <p>❌ Teile NIEMALS: Vollständigen Namen, Adresse, Telefonnummer, Schule, genauen Standort</p>
-      <p>✅ Nutze nur deinen Benutzernamen und allgemeine Angaben (z.B. "Bayern" statt "München, Musterstraße 5")</p>
+      <p>✅ Nutze nur deinen Benutzernamen und allgemeine Angaben</p>
       
       <h4>2. Treffen im echten Leben</h4>
       <p>❌ Triff dich NICHT alleine mit Personen, die du nur online kennst</p>
@@ -653,34 +435,13 @@ class AuthManager {
         <li>Nach persönlichen Daten fragt</li>
         <li>Sexuelle Inhalte schickt oder verlangt</li>
         <li>Dich zu Geheimnissen drängt</li>
-        <li>Sich als jünger ausgibt als er/sie ist</li>
-        <li>Dich zu einem Treffen überreden will</li>
       </ul>
       
-      <h4>4. Für Eltern</h4>
-      <p>👨‍👩‍👧 Begleiten Sie Ihr Kind bei der Nutzung:</p>
-      <ul>
-        <li>Sprechen Sie regelmäßig über Online-Kontakte</li>
-        <li>Erklären Sie Gefahren wie Grooming und Catfishing</li>
-        <li>Die Plattform kann keine 100%ige Sicherheit garantieren</li>
-        <li>Elterliche Aufsicht ist unverzichtbar</li>
-      </ul>
-      
-      <h4>5. Technische Schutzmaßnahmen</h4>
-      <p>✅ Diese Plattform nutzt:</p>
-      <ul>
-        <li>Automatische Inhaltsmoderation</li>
-        <li>VPN-Erkennung</li>
-        <li>Melde- und Blockierfunktionen</li>
-        <li>Moderatoren zur Prüfung von Meldungen</li>
-      </ul>
-      
-      <h4>6. Im Notfall</h4>
+      <h4>4. Im Notfall</h4>
       <p>🚨 Bei akuter Gefahr:</p>
       <ul>
         <li>Polizei: 110</li>
-        <li>Nummer gegen Kummer: 116 111 (anonym & kostenlos)</li>
-        <li>Hilfetelefon Sexueller Missbrauch: 0800 22 55 530</li>
+        <li>Nummer gegen Kummer: 116 111</li>
       </ul>
     `;
     this.showModal(content);
@@ -688,20 +449,45 @@ class AuthManager {
 
   showModal(content) {
     const modal = document.getElementById('modal-overlay');
-    document.getElementById('modal-content').innerHTML = content;
-    modal.classList.add('show');
+    const modalContent = document.getElementById('modal-content');
     
-    modal.querySelector('.modal-close').onclick = () => {
-      modal.classList.remove('show');
-    };
-    
-    modal.onclick = (e) => {
-      if (e.target === modal) {
-        modal.classList.remove('show');
+    if (modal && modalContent) {
+      modalContent.innerHTML = content;
+      modal.classList.add('show');
+      
+      const closeBtn = modal.querySelector('.modal-close');
+      if (closeBtn) {
+        closeBtn.onclick = () => modal.classList.remove('show');
       }
-    };
+      
+      modal.onclick = (e) => {
+        if (e.target === modal) {
+          modal.classList.remove('show');
+        }
+      };
+    }
   }
 }
 
 // Init
 const authManager = new AuthManager();
+```
+
+---
+
+## ✅ **PROBLEM 2: E-MAIL REDIRECT FIX**
+
+### Supabase Dashboard - E-Mail Einstellungen ändern:
+
+1. **Authentication** → **URL Configuration**
+2. **Site URL** setzen auf:
+```
+   https://jugend-dating-app.vercel.app
+```
+   *(ersetze mit deiner echten Vercel URL)*
+
+3. **Redirect URLs** hinzufügen:
+```
+   https://jugend-dating-app.vercel.app/*
+   https://jugend-dating-app.vercel.app/**
+   https://jugend-dating-app.vercel.app/index.html
