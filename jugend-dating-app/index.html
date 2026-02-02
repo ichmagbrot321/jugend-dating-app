@@ -198,25 +198,90 @@
     <!-- Notification Toast -->
     <div id="toast" class="toast"></div>
 
-<!-- Scripts - WICHTIG: Reihenfolge beachten! -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
-    <script src="/js/config.js"></script>
-    <script src="/js/moderation.js"></script>
-    <script src="/js/webrtc.js"></script>
-    <script src="/js/chat.js"></script>
-    <script src="/js/auth.js"></script>
-    <script src="/js/app.js"></script>
+// ==================== SUPABASE KONFIGURATION ====================
+const SUPABASE_URL = 'https://yavsgbhybwzjaptacbij.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3lhdnNnYmh5Ynd6amFwdGFjYmlqLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTczNzQwMjM5MSwiZXhwIjoyMDUyOTc4MzkxfQ.Z6Y0n8qKLqy3YRyQCcGrXqQmPRvz-m_jPUDpRJFqCTw';
+
+// Supabase Client initialisieren
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ==================== OWNER KONFIGURATION ====================
+const OWNER_EMAIL = 'pajaziti.leon97080@gmail.com';
+
+// ==================== APP KONFIGURATION ====================
+const APP_CONFIG = {
+  minAge: 14,
+  parentVerificationAge: 16,
+  maxMessageLength: 1000,
+  profilePictureRequired: false,
+  moderationEnabled: true,
+  vpnDetectionEnabled: false,
+  maxDistanceKm: 100,
+  allowCitySearch: true
+};
+
+// ==================== MODERATION WORTLISTEN ====================
+const MODERATION_LISTS = {
+  critical: ['nudes', 'nacktbilder', 'sexting', 'treffen', 'adresse'],
+  grooming: ['geheim', 'nicht sagen', 'alleine treffen'],
+  sexual: ['sex', 'porno', 'geil', 'nackt'],
+  violence: ['töten', 'umbringen', 'selbstmord'],
+  drugs: ['kokain', 'heroin', 'crystal', 'weed'],
+  harassment: ['hure', 'schlampe', 'schwuchtel']
+};
+
+// ==================== REGEX PATTERNS ====================
+const MODERATION_PATTERNS = {
+  phone: /(\+?\d{1,4}[\s-]?)?\(?\d{3,4}\)?[\s-]?\d{3,4}[\s-]?\d{3,4}/g,
+  email: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+  url: /(https?:\/\/|www\.)[^\s]+/g,
+  address: /\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]+/g,
+  social: /@[a-zA-Z0-9._]{3,}/g,
+  spam: /(.)\1{4,}/g
+};
+
+// ==================== VPN DETECTION ====================
+const VPN_DETECTION = {
+  knownVPNRanges: [],
+  knownVPNASNs: [],
+  vpnKeywords: ['vpn', 'proxy', 'tor']
+};
+
+// ==================== DISTANZ-BERECHNUNG ====================
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// ==================== GEO-CODING ====================
+async function getCityCoordinates(city, region) {
+  try {
+    const query = `${city}, ${region}, Germany`;
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
     
-    <!-- Loading-Screen verstecken nach Init -->
-    <script>
-      window.addEventListener('load', () => {
-        setTimeout(() => {
-          const loadingScreen = document.getElementById('loading-screen');
-          if (loadingScreen && !authManager?.currentUser) {
-            loadingScreen.classList.remove('active');
-          }
-        }, 1000);
-      });
-    </script>
-</body>
-</html>
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'TeenConnect-App' }
+    });
+    
+    const data = await response.json();
+    
+    if (data && data.length > 0) {
+      return {
+        lat: parseFloat(data[0].lat),
+        lon: parseFloat(data[0].lon)
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Geocoding error:', error);
+    return null;
+  }
+}
+
+console.log('✅ Config loaded successfully');
