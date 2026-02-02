@@ -4,6 +4,7 @@ class App {
   constructor() {
     this.currentUser = null;
     this.users = [];
+    this.allUsers = []; // Für Filter-Reset
     this.init();
   }
 
@@ -77,7 +78,9 @@ class App {
       await this.loadDiscoverUsers();
 
       // Lade Chats
-      await chatManager.loadChats(this.currentUser.id);
+      if (typeof chatManager !== 'undefined') {
+        await chatManager.loadChats(this.currentUser.id);
+      }
 
       // Subscribe zu Notifications
       this.subscribeToNotifications();
@@ -90,6 +93,7 @@ class App {
     } catch (error) {
       console.error('Fehler beim Laden der App:', error);
       authManager.showToast('Fehler beim Laden', 'error');
+      document.getElementById('loading-screen').classList.remove('active');
     }
   }
 
@@ -129,10 +133,10 @@ class App {
       // Lade User (nicht blockiert, nicht selbst)
       let query = supabase
         .from('users')
-        .select('id, username, geburtsdatum, profilbild_url, region, stadt, interessen, online_status, zuletzt_online')
+        .select('id, username, geburtsdatum, profilbild_url, region, stadt, interessen, online_status, zuletzt_online, latitude, longitude')
         .neq('id', this.currentUser.id)
         .eq('account_status', 'active')
-        .limit(50);
+        .limit(100);
 
       // Filter blockierte
       if (blockedIds.length > 0) {
@@ -143,6 +147,7 @@ class App {
 
       if (error) throw error;
 
+      this.allUsers = users; // Speichere alle für Filter-Reset
       this.users = users;
       this.renderDiscoverUsers();
 
@@ -159,6 +164,7 @@ class App {
         <div style="grid-column: 1/-1; padding: 40px 20px; text-align: center; color: var(--text-secondary);">
           <p style="font-size: 48px; margin-bottom: 10px;">🔍</p>
           <p>Keine neuen Nutzer gefunden</p>
+          <p style="font-size: 14px; margin-top: 10px;">Versuche die Filter anzupassen</p>
         </div>
       `;
       return;
@@ -167,6 +173,20 @@ class App {
     container.innerHTML = this.users.map(user => {
       const age = authManager.calculateAge(user.geburtsdatum);
       const isOnline = user.online_status && chatManager.isRecentlyActive(user.zuletzt_online);
+
+      // Berechne Entfernung falls möglich
+      let distanceText = '';
+      if (this.currentUser.latitude && this.currentUser.longitude && 
+          user.latitude && user.longitude && 
+          typeof calculateDistance === 'function') {
+        const distance = calculateDistance(
+          this.currentUser.latitude,
+          this.currentUser.longitude,
+          user.latitude,
+          user.longitude
+        );
+        distanceText = `<div class="user-card-distance">📍 ${Math.round(distance)} km</div>`;
+      }
 
       return `
         <div class="user-card" data-user-id="${user.id}">
@@ -180,6 +200,7 @@ class App {
             </div>
             <div class="user-card-age">${age} Jahre</div>
             <div class="user-card-region">${user.region}</div>
+            ${distanceText}
           </div>
         </div>
       `;
@@ -201,6 +222,20 @@ class App {
     const age = authManager.calculateAge(user.geburtsdatum);
     const isOnline = user.online_status && chatManager.isRecentlyActive(user.zuletzt_online);
 
+    // Berechne Entfernung
+    let distanceHTML = '';
+    if (this.currentUser.latitude && this.currentUser.longitude && 
+        user.latitude && user.longitude && 
+        typeof calculateDistance === 'function') {
+      const distance = calculateDistance(
+        this.currentUser.latitude,
+        this.currentUser.longitude,
+        user.latitude,
+        user.longitude
+      );
+      distanceHTML = `<p style="margin-bottom: 10px;"><strong>Entfernung:</strong> ca. ${Math.round(distance)} km</p>`;
+    }
+
     const content = `
       <div style="text-align: center;">
         <img src="${user.profilbild_url || '/images/default-avatar.png'}" 
@@ -213,6 +248,7 @@ class App {
         
         <div style="background: var(--surface-light); padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: left;">
           <p style="margin-bottom: 10px;"><strong>Region:</strong> ${user.region}${user.stadt ? ', ' + user.stadt : ''}</p>
+          ${distanceHTML}
           <p><strong>Interessen:</strong> ${user.interessen || 'Keine Angaben'}</p>
         </div>
 
@@ -236,9 +272,11 @@ class App {
     });
 
     document.querySelector('[data-action="block"]').addEventListener('click', async () => {
-      await chatManager.blockUser(userId);
+      if (typeof chatManager !== 'undefined') {
+        await chatManager.blockUser(userId);
+      }
       document.getElementById('modal-overlay').classList.remove('show');
-      await this.loadDiscoverUsers(); // Reload
+      await this.loadDiscoverUsers();
     });
   }
 
@@ -273,7 +311,9 @@ class App {
       }
 
       // Öffne Chat
-      await chatManager.openChat(chatId, partnerId);
+      if (typeof chatManager !== 'undefined') {
+        await chatManager.openChat(chatId, partnerId);
+      }
 
       // Wechsel zu Chats-View
       this.switchView('chats');
@@ -302,11 +342,13 @@ class App {
       authManager.showToast('Bild wird überprüft...', 'info');
 
       // Moderation Check
-      const moderationResult = await moderationManager.checkProfileImage(file, this.currentUser.id);
+      if (typeof moderationManager !== 'undefined') {
+        const moderationResult = await moderationManager.checkProfileImage(file, this.currentUser.id);
 
-      if (!moderationResult.allowed) {
-        authManager.showToast(moderationResult.reason, 'error');
-        return;
+        if (!moderationResult.allowed) {
+          authManager.showToast(moderationResult.reason, 'error');
+          return;
+        }
       }
 
       // Upload zu Supabase Storage
@@ -377,7 +419,9 @@ class App {
       document.getElementById('discover-view').classList.add('active');
     } else if (viewName === 'chats') {
       document.getElementById('chats-view').classList.add('active');
-      chatManager.loadChats(this.currentUser.id);
+      if (typeof chatManager !== 'undefined') {
+        chatManager.loadChats(this.currentUser.id);
+      }
     } else if (viewName === 'profile') {
       document.getElementById('profile-view').classList.add('active');
     }
@@ -394,6 +438,22 @@ class App {
         </button>
         <button class="btn-secondary" data-action="delete-account" style="width: 100%; margin-bottom: 10px;">
           Account löschen
+        </button>
+      </div>
+
+      <div style="margin-top: 20px;">
+        <h3 style="font-size: 16px; margin-bottom: 15px;">Standort</h3>
+        ${this.currentUser.stadt ? `
+          <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 10px;">
+            📍 Stadt: ${this.currentUser.stadt}, ${this.currentUser.region}
+          </p>
+        ` : `
+          <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 10px;">
+            Keine Stadt angegeben
+          </p>
+        `}
+        <button class="btn-secondary" data-action="update-location" style="width: 100%;">
+          Stadt ${this.currentUser.stadt ? 'ändern' : 'hinzufügen'}
         </button>
       </div>
 
@@ -434,11 +494,53 @@ class App {
       this.showMyReports();
     });
 
+    document.querySelector('[data-action="update-location"]')?.addEventListener('click', () => {
+      this.updateLocation();
+    });
+
     document.getElementById('setting-notifications')?.addEventListener('change', (e) => {
       if (e.target.checked) {
         this.requestNotificationPermission();
       }
     });
+  }
+
+  async updateLocation() {
+    const city = prompt('Stadt eingeben (optional):', this.currentUser.stadt || '');
+    
+    if (city === null) return; // Abgebrochen
+
+    try {
+      let coordinates = null;
+      
+      if (city && typeof getCityCoordinates === 'function') {
+        authManager.showToast('Koordinaten werden ermittelt...', 'info');
+        coordinates = await getCityCoordinates(city, this.currentUser.region);
+      }
+
+      await supabase
+        .from('users')
+        .update({
+          stadt: city || null,
+          latitude: coordinates?.lat || null,
+          longitude: coordinates?.lon || null
+        })
+        .eq('id', this.currentUser.id);
+
+      this.currentUser.stadt = city || null;
+      this.currentUser.latitude = coordinates?.lat || null;
+      this.currentUser.longitude = coordinates?.lon || null;
+
+      authManager.showToast('Standort aktualisiert', 'success');
+      document.getElementById('modal-overlay').classList.remove('show');
+
+      // Lade Profil neu
+      await this.loadProfile();
+
+    } catch (error) {
+      console.error('Fehler beim Aktualisieren:', error);
+      authManager.showToast('Aktualisierung fehlgeschlagen', 'error');
+    }
   }
 
   async showMyReports() {
@@ -488,7 +590,7 @@ class App {
                   Grund: ${report.reason}
                 </p>
                 <p style="font-size: 12px; color: var(--text-secondary);">
-                  ${chatManager.formatTime(report.created_at)}
+                  ${typeof chatManager !== 'undefined' ? chatManager.formatTime(report.created_at) : new Date(report.created_at).toLocaleDateString()}
                 </p>
                 ${report.status === 'rejected' && report.rejection_reason ? `
                   <div style="margin-top: 10px; padding: 10px; background: rgba(255, 107, 107, 0.1); border-radius: 5px;">
@@ -535,11 +637,10 @@ class App {
         .update({
           appealed: true,
           appeal_reason: reason,
-          status: 'pending' // Zurück zu pending für erneute Prüfung
+          status: 'pending'
         })
         .eq('id', reportId);
 
-      // Benachrichtige Moderatoren
       await supabase
         .from('moderation_queue')
         .insert({
@@ -588,13 +689,11 @@ class App {
     if (!confirmed) return;
 
     try {
-      // Lösche alle Daten
       await supabase
         .from('users')
-        .delete()
+        .update({ account_status: 'deleted' })
         .eq('id', this.currentUser.id);
 
-      // Logout
       await supabase.auth.signOut();
 
       authManager.showToast('Account gelöscht', 'success');
@@ -606,6 +705,8 @@ class App {
   }
 
   showFilters() {
+    const hasLocation = this.currentUser.latitude && this.currentUser.longitude;
+
     const content = `
       <h2>Filter</h2>
       <form id="filter-form">
@@ -620,6 +721,20 @@ class App {
         <label style="display: block; margin: 15px 0 5px; font-size: 14px;">Region:</label>
         <input type="text" id="filter-region" placeholder="z.B. Bayern" 
                style="width: 100%; padding: 10px; background: var(--surface-light); border: 2px solid var(--border); border-radius: 8px; color: var(--text);">
+
+        ${hasLocation ? `
+          <label style="display: block; margin: 15px 0 5px; font-size: 14px;">
+            Maximale Entfernung: <span id="distance-value">${this.currentUser.max_distance || 100}</span> km
+          </label>
+          <input type="range" id="filter-distance" min="10" max="500" step="10" 
+                 value="${this.currentUser.max_distance || 100}"
+                 style="width: 100%; accent-color: var(--primary);"
+                 oninput="document.getElementById('distance-value').textContent = this.value">
+        ` : `
+          <p style="color: var(--text-secondary); font-size: 13px; margin-top: 15px; padding: 10px; background: var(--surface-light); border-radius: 8px;">
+            💡 Gib eine Stadt an, um nach Entfernung zu filtern!
+          </p>
+        `}
 
         <label class="toggle-label" style="margin-top: 15px;">
           <span>Nur online</span>
@@ -642,7 +757,8 @@ class App {
     });
 
     document.querySelector('[data-action="reset"]').addEventListener('click', async () => {
-      await this.loadDiscoverUsers();
+      this.users = [...this.allUsers];
+      this.renderDiscoverUsers();
       document.getElementById('modal-overlay').classList.remove('show');
     });
   }
@@ -652,9 +768,12 @@ class App {
     const ageMax = parseInt(document.getElementById('filter-age-max').value) || 99;
     const region = document.getElementById('filter-region').value.trim();
     const onlineOnly = document.getElementById('filter-online').checked;
+    const maxDistance = document.getElementById('filter-distance')?.value 
+      ? parseInt(document.getElementById('filter-distance').value) 
+      : null;
 
     // Filtere Users
-    let filteredUsers = this.users;
+    let filteredUsers = [...this.allUsers];
 
     // Alter
     filteredUsers = filteredUsers.filter(user => {
@@ -672,12 +791,55 @@ class App {
     // Online
     if (onlineOnly) {
       filteredUsers = filteredUsers.filter(user => 
-        user.online_status && chatManager.isRecentlyActive(user.zuletzt_online)
+        user.online_status && typeof chatManager !== 'undefined' && chatManager.isRecentlyActive(user.zuletzt_online)
       );
+    }
+
+    // Entfernung
+    if (maxDistance && this.currentUser.latitude && this.currentUser.longitude && typeof calculateDistance === 'function') {
+      filteredUsers = filteredUsers.filter(user => {
+        if (!user.latitude || !user.longitude) return false;
+        
+        const distance = calculateDistance(
+          this.currentUser.latitude,
+          this.currentUser.longitude,
+          user.latitude,
+          user.longitude
+        );
+        
+        return distance <= maxDistance;
+      });
+
+      // Sortiere nach Entfernung
+      filteredUsers.sort((a, b) => {
+        const distA = calculateDistance(
+          this.currentUser.latitude,
+          this.currentUser.longitude,
+          a.latitude,
+          a.longitude
+        );
+        const distB = calculateDistance(
+          this.currentUser.latitude,
+          this.currentUser.longitude,
+          b.latitude,
+          b.longitude
+        );
+        return distA - distB;
+      });
     }
 
     this.users = filteredUsers;
     this.renderDiscoverUsers();
+
+    // Speichere max_distance
+    if (maxDistance) {
+      await supabase
+        .from('users')
+        .update({ max_distance: maxDistance })
+        .eq('id', this.currentUser.id);
+    }
+
+    authManager.showToast(`${filteredUsers.length} Nutzer gefunden`, 'success');
   }
 
   subscribeToNotifications() {
@@ -703,7 +865,6 @@ class App {
       notification.type === 'ban' || notification.type === 'warning' ? 'error' : 'info'
     );
 
-    // Desktop Notification
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification(notification.title, {
         body: notification.message,
@@ -719,6 +880,7 @@ class App {
   cleanup() {
     this.currentUser = null;
     this.users = [];
+    this.allUsers = [];
   }
 
   registerServiceWorker() {
