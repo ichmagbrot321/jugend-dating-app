@@ -91,9 +91,9 @@ class AuthManager {
 
     try {
       // VPN Check
-      const vpnDetected = await this.checkVPN();
-      if (vpnDetected) {
-        this.showError('VPN/Proxy erkannt. Bitte deaktiviere dein VPN.');
+      const vpnCheckResult = await this.checkVPN();
+      if (vpnCheckResult.blocked) {
+        this.showError(vpnCheckResult.message);
         return;
       }
 
@@ -152,10 +152,10 @@ class AuthManager {
         return;
       }
 
-      // VPN Check
-      const vpnDetected = await this.checkVPN();
-      if (vpnDetected) {
-        this.showError('VPN/Proxy erkannt. Bitte deaktiviere dein VPN.');
+      // VPN-Check
+      const vpnCheckResult = await this.checkVPN();
+      if (vpnCheckResult.blocked) {
+        this.showError(vpnCheckResult.message);
         return;
       }
 
@@ -169,6 +169,16 @@ class AuthManager {
       if (existingUser) {
         this.showError('Benutzername bereits vergeben.');
         return;
+      }
+
+      // Geo-Coding (Stadt zu Koordinaten)
+      let coordinates = null;
+      if (city && typeof getCityCoordinates === 'function') {
+        this.showToast('Koordinaten werden ermittelt...', 'info');
+        coordinates = await getCityCoordinates(city, region);
+        if (!coordinates) {
+          console.warn('Koordinaten konnten nicht ermittelt werden');
+        }
       }
 
       // Account erstellen
@@ -208,10 +218,13 @@ class AuthManager {
           verified_parent: !needsParentVerification,
           region,
           stadt: city || null,
+          latitude: coordinates?.lat || null,
+          longitude: coordinates?.lon || null,
           interessen: interests,
           role: role,
           account_status: 'active',
-          last_ip: await this.getIP()
+          last_ip: await this.getIP(),
+          vpn_detected: vpnCheckResult.vpnDetected
         });
 
       if (profileError) throw profileError;
@@ -238,27 +251,37 @@ class AuthManager {
   }
 
   async sendParentVerification(userId, parentEmail, username) {
-    // Erstelle Verifikations-Token
-    const token = this.generateToken();
-    
-    // Speichere Token
-    await supabase
-      .from('parent_verifications')
-      .insert({
-        user_id: userId,
-        parent_email: parentEmail,
-        token,
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 Tage
-      });
+    try {
+      // Erstelle Verifikations-Token
+      const token = this.generateToken();
+      
+      // Speichere Token
+      await supabase
+        .from('parent_verifications')
+        .insert({
+          user_id: userId,
+          parent_email: parentEmail,
+          token,
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 Tage
+        });
 
-    // Sende E-Mail (Supabase Edge Function)
-    await supabase.functions.invoke('send-parent-verification', {
-      body: {
-        parentEmail,
-        username,
-        token
+      // Versuche E-Mail zu senden (Edge Function - optional)
+      try {
+        await supabase.functions.invoke('send-parent-verification', {
+          body: {
+            parentEmail,
+            username,
+            token
+          }
+        });
+      } catch (emailError) {
+        console.warn('E-Mail konnte nicht gesendet werden:', emailError);
+        // Kein Fehler werfen - Registrierung trotzdem erfolgreich
       }
-    });
+    } catch (error) {
+      console.error('Fehler bei Eltern-Verifikation:', error);
+      // Kein Fehler werfen - Registrierung trotzdem erfolgreich
+    }
   }
 
   async handleAuthSuccess(user) {
@@ -298,16 +321,18 @@ class AuthManager {
 
     // VPN-Check während Session
     if (APP_CONFIG.vpnDetectionEnabled) {
-      const vpnDetected = await this.checkVPN();
-      if (vpnDetected) {
+      const vpnCheckResult = await this.checkVPN();
+      if (vpnCheckResult.vpnDetected) {
         await supabase
           .from('users')
           .update({ vpn_detected: true })
           .eq('id', user.id);
         
-        await supabase.auth.signOut();
-        this.showError('VPN während der Nutzung erkannt. Session beendet.');
-        return;
+        if (vpnCheckResult.blocked) {
+          await supabase.auth.signOut();
+          this.showError('VPN während der Nutzung erkannt. Session beendet.');
+          return;
+        }
       }
     }
 
@@ -332,44 +357,145 @@ class AuthManager {
     try {
       const ip = await this.getIP();
       
-      // Prüfe gegen bekannte VPN-Ranges
-      for (const range of VPN_DETECTION.knownVPNRanges) {
-        if (this.ipInRange(ip, range)) {
-          return true;
+      if (!ip) {
+        return { 
+          blocked: false, 
+          vpnDetected: false, 
+          message: 'IP konnte nicht ermittelt werden' 
+        };
+      }
+
+      // 1. HOSTNAME & REVERSE DNS CHECK
+      const ipInfoResponse = await fetch(`https://ipapi.co/${ip}/json/`);
+      const ipInfo = await ipInfoResponse.json();
+
+      // Prüfe Hostname auf VPN-Keywords
+      if (ipInfo.hostname) {
+        const hostname = ipInfo.hostname.toLowerCase();
+        if (typeof VPN_DETECTION !== 'undefined' && VPN_DETECTION.vpnKeywords) {
+          for (const keyword of VPN_DETECTION.vpnKeywords) {
+            if (hostname.includes(keyword)) {
+              return {
+                blocked: true,
+                vpnDetected: true,
+                message: `VPN/Proxy erkannt (${ipInfo.hostname}). Bitte deaktiviere deinen VPN.`
+              };
+            }
+          }
         }
       }
 
-      // Prüfe über ipinfo.io (Free Tier - 50k requests/month)
-      const response = await fetch(`https://ipinfo.io/${ip}/json`);
-      const data = await response.json();
-      
-      // Prüfe ASN
-      if (data.org && VPN_DETECTION.knownVPNASNs.some(asn => data.org.includes(asn))) {
-        return true;
+      // 2. ASN CHECK
+      if (ipInfo.asn && typeof VPN_DETECTION !== 'undefined' && VPN_DETECTION.knownVPNASNs) {
+        if (VPN_DETECTION.knownVPNASNs.includes(ipInfo.asn)) {
+          return {
+            blocked: true,
+            vpnDetected: true,
+            message: `VPN/Proxy erkannt (ASN: ${ipInfo.asn}). Bitte deaktiviere deinen VPN.`
+          };
+        }
       }
 
-      // Prüfe Hostname
-      if (data.hostname && (
-        data.hostname.includes('vpn') ||
-        data.hostname.includes('proxy') ||
-        data.hostname.includes('tor')
-      )) {
-        return true;
+      // 3. ORG/ISP CHECK
+      if (ipInfo.org && typeof VPN_DETECTION !== 'undefined' && VPN_DETECTION.vpnKeywords) {
+        const org = ipInfo.org.toLowerCase();
+        for (const keyword of VPN_DETECTION.vpnKeywords) {
+          if (org.includes(keyword)) {
+            return {
+              blocked: true,
+              vpnDetected: true,
+              message: `VPN/Proxy erkannt (Provider: ${ipInfo.org}). Bitte deaktiviere deinen VPN.`
+            };
+          }
+        }
       }
 
-      return false;
+      // 4. DATACENTER CHECK
+      if (ipInfo.org) {
+        const datacenterKeywords = ['hosting', 'server', 'cloud', 'data center', 'datacenter'];
+        const org = ipInfo.org.toLowerCase();
+        
+        for (const keyword of datacenterKeywords) {
+          if (org.includes(keyword)) {
+            return {
+              blocked: true,
+              vpnDetected: true,
+              message: 'Datacenter-IP erkannt. Bitte nutze eine private Internet-Verbindung.'
+            };
+          }
+        }
+      }
+
+      // 5. TOR EXIT NODE CHECK
+      if (ipInfo.hostname && ipInfo.hostname.includes('tor-exit')) {
+        return {
+          blocked: true,
+          vpnDetected: true,
+          message: 'Tor-Netzwerk erkannt. Bitte deaktiviere Tor.'
+        };
+      }
+
+      // 6. IP QUALITY SCORE (optional - wenn API-Key vorhanden)
+      if (typeof VPN_DETECTION !== 'undefined' && VPN_DETECTION.ipQualityScore) {
+        try {
+          const qualityResponse = await fetch(
+            `https://ipqualityscore.com/api/json/ip/${VPN_DETECTION.ipQualityScore}/${ip}?strictness=1`
+          );
+          const qualityData = await qualityResponse.json();
+          
+          if (qualityData.proxy || qualityData.vpn || qualityData.tor) {
+            return {
+              blocked: true,
+              vpnDetected: true,
+              message: 'VPN/Proxy erkannt. Bitte deaktiviere deinen VPN.'
+            };
+          }
+        } catch (e) {
+          console.warn('IP Quality Score Check fehlgeschlagen:', e);
+        }
+      }
+
+      // Kein VPN erkannt
+      return { 
+        blocked: false, 
+        vpnDetected: false, 
+        message: 'OK' 
+      };
+
     } catch (error) {
       console.error('VPN-Check fehlgeschlagen:', error);
-      return false; // Bei Fehler nicht blockieren
+      // Bei Fehler NICHT blockieren (False Negative besser als False Positive)
+      return { 
+        blocked: false, 
+        vpnDetected: false, 
+        message: 'Check fehlgeschlagen' 
+      };
     }
   }
 
   async getIP() {
     try {
-      const response = await fetch('https://api.ipify.org?format=json');
-      const data = await response.json();
-      return data.ip;
+      // Nutze mehrere Services als Fallback
+      const services = [
+        'https://api.ipify.org?format=json',
+        'https://ipapi.co/json/',
+        'https://api.my-ip.io/ip.json'
+      ];
+
+      for (const service of services) {
+        try {
+          const response = await fetch(service);
+          const data = await response.json();
+          const ip = data.ip || data.address;
+          if (ip) return ip;
+        } catch (e) {
+          continue;
+        }
+      }
+
+      return null;
     } catch (error) {
+      console.error('IP-Abruf fehlgeschlagen:', error);
       return null;
     }
   }
@@ -454,6 +580,7 @@ class AuthManager {
       <h3>6. Beendigung</h3>
       <p>6.1 Accounts können jederzeit gelöscht werden.</p>
       <p>6.2 Bei schweren Verstößen behält sich die Plattform permanente Sperrungen vor.</p>
+      <p>6.3 Bitte sprich mit deinen Eltern und wenn du dich unwohl fühlst, melde das und wende dich an deine Eltern.</p>
     `;
     this.showModal(content);
   }
@@ -472,11 +599,13 @@ class AuthManager {
       <p>2.3 Chat-Nachrichten (verschlüsselt gespeichert)</p>
       <p>2.4 IP-Adressen (zur Sicherheit und VPN-Erkennung)</p>
       <p>2.5 Nutzungsdaten: Online-Status, letzte Aktivität</p>
+      <p>2.6 Standortdaten: Region, optional Stadt und Koordinaten (für Umkreissuche)</p>
       
       <h3>3. Zweck der Datenverarbeitung</h3>
       <p>3.1 Bereitstellung der Plattform</p>
       <p>3.2 Sicherheit und Jugendschutz</p>
       <p>3.3 Moderation und Verhinderung von Missbrauch</p>
+      <p>3.4 Umkreissuche (nur mit Zustimmung)</p>
       
       <h3>4. Rechtsgrundlage</h3>
       <p>Art. 6 Abs. 1 lit. a DSGVO (Einwilligung)</p>
